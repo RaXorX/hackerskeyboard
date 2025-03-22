@@ -1,0 +1,40 @@
+package com.klausw.hackerskeyboard;
+
+import android.content.Context;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.LinearLayout;
+
+public class FloatingKeyboard extends LinearLayout {
+    private WindowManager.LayoutParams params;
+    private WindowManager windowManager;
+    private float initialX, initialY;
+    private float touchX, touchY;
+
+    public FloatingKeyboard(Context context, WindowManager.LayoutParams layoutParams, WindowManager wm) {
+        super(context);
+        this.params = layoutParams;
+        this.windowManager = wm;
+
+        this.setOnTouchListener(new OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        initialX = params.x;
+                        initialY = params.y;
+                        touchX = event.getRawX();
+                        touchY = event.getRawY();
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        params.x = (int) (initialX + (event.getRawX() - touchX));
+                        params.y = (int) (initialY + (event.getRawY() - touchY));
+                        windowManager.updateViewLayout(FloatingKeyboard.this, params);
+                        return true;
+                }
+                return false;
+            }
+        });
+    }
+}
