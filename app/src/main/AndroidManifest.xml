@@ -4,8 +4,8 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.READ_USER_DICTIONARY" />
     <uses-permission android:name="android.permission.WRITE_USER_DICTIONARY" />
-     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-      <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.faketouch" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -16,16 +16,13 @@
             android:restoreAnyVersion="true"
             android:hardwareAccelerated="false"
             android:killAfterRestore="false"
-            android:icon="@drawable/icon">
-     
-    android:allowBackup="true"
-    android:theme="@style/Theme.AppCompat.Light">
+            android:icon="@drawable/icon"
+            android:theme="@style/Theme.AppCompat.Light">
     
-    <service
-        android:name=".FloatingKeyboardService"
-        android:permission="android.permission.SYSTEM_ALERT_WINDOW"
-        android:exported="true"/>
-    </service>
+        <service android:name=".FloatingKeyboardService"
+                android:permission="android.permission.SYSTEM_ALERT_WINDOW"
+                android:exported="true">
+        </service>
 
         <service android:name="LatinIME"
                 android:label="@string/english_ime_name"
