@@ -155,8 +155,11 @@ public class LatinIME extends InputMethodService implements
     // private LatinKeyboardView mInputView;
     private LinearLayout mCandidateViewContainer;
     private CandidateView mCandidateView;
+
+    public LinearLayout mCandidateViewAndKeyboardView;
     private Suggest mSuggest;
     private CompletionInfo[] mCompletions;
+    private CompletionInfo[] mCompletionsFullText;
 
     private AlertDialog mOptionsDialog;
 
@@ -195,6 +198,10 @@ public class LatinIME extends InputMethodService implements
     private boolean mModAlt;
     private boolean mModMeta;
     private boolean mModFn;
+
+    //*// added by Pulya Max
+    private boolean mModsPressed=false;
+
     // Saved shift state when leaving alphabet mode, or when applying multitouch shift
     private int mSavedShiftState;
     private boolean mPasswordText;
@@ -208,7 +215,7 @@ public class LatinIME extends InputMethodService implements
     private boolean mQuickFixes;
     private boolean mShowSuggestions;
     private boolean mIsShowingHint;
-    private boolean mConnectbotTabHack;
+    private boolean mTabHack;
     private boolean mFullscreenOverride;
     private boolean mForceKeyboardOn;
     private boolean mKeyboardNotification;
@@ -231,6 +238,9 @@ public class LatinIME extends InputMethodService implements
     private int mKeyboardModeOverridePortrait;
     private int mKeyboardModeOverrideLandscape;
     private int mCorrectionMode;
+
+    private int mCountTabPresses;
+
     private boolean mEnableVoice = true;
     private boolean mVoiceOnPrimary;
     private int mOrientation;
@@ -378,7 +388,7 @@ public class LatinIME extends InputMethodService implements
         Resources res = getResources();
         mReCorrectionEnabled = prefs.getBoolean(PREF_RECORRECTION_ENABLED,
                 res.getBoolean(R.bool.default_recorrection_enabled));
-        mConnectbotTabHack = prefs.getBoolean(PREF_CONNECTBOT_TAB_HACK,
+        mTabHack = prefs.getBoolean(PREF_CONNECTBOT_TAB_HACK,
                 res.getBoolean(R.bool.default_connectbot_tab_hack));
         mFullscreenOverride = prefs.getBoolean(PREF_FULLSCREEN_OVERRIDE,
                 res.getBoolean(R.bool.default_fullscreen_override));
@@ -541,7 +551,7 @@ public class LatinIME extends InputMethodService implements
         }
     }
     
-    private boolean isPortrait() {
+    public boolean isPortrait() {
         return (mOrientation == Configuration.ORIENTATION_PORTRAIT);
     }
 
@@ -674,7 +684,7 @@ public class LatinIME extends InputMethodService implements
                 mLanguageSwitcher.loadLocales(PreferenceManager
                         .getDefaultSharedPreferences(this));
                 mLanguageSwitcher.setSystemLocale(conf.locale);
-                toggleLanguage(true, true);
+                toggleLanguage(true, true,false);
             } else {
                 reloadKeyboards();
             }
@@ -693,7 +703,7 @@ public class LatinIME extends InputMethodService implements
         super.onConfigurationChanged(conf);
         mConfigurationChanging = false;
     }
-
+    //*//patched by pulya max for fix candidates
     @Override
     public View onCreateInputView() {
         setCandidatesViewShown(false);  // Workaround for "already has a parent" when reconfiguring
@@ -701,7 +711,24 @@ public class LatinIME extends InputMethodService implements
         mKeyboardSwitcher.makeKeyboards(true);
         mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_TEXT, 0,
                 shouldShowVoiceButton(getCurrentInputEditorInfo()));
-        return mKeyboardSwitcher.getInputView();
+
+        View keyboard = mKeyboardSwitcher.getInputView();
+        View candidates = createCandidatesView();
+
+        mCandidateViewAndKeyboardView=new LinearLayout(this);
+        mCandidateViewAndKeyboardView.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams
+                (LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        layoutParams.setMargins(0, 0, 0, 0);
+
+        keyboard.setLayoutParams(layoutParams);
+        candidates.setLayoutParams(layoutParams);
+
+        mCandidateViewAndKeyboardView.addView(candidates);
+        mCandidateViewAndKeyboardView.addView(keyboard);
+
+
+        return mCandidateViewAndKeyboardView;
     }
 
     @Override
@@ -721,8 +748,8 @@ public class LatinIME extends InputMethodService implements
     	}
     }
     
-    @Override
-    public View onCreateCandidatesView() {
+    //*//Patched by Pulya Max to fix candidates on new android
+    public View createCandidatesView() {
         //Log.i(TAG, "onCreateCandidatesView(), mCandidateViewContainer=" + mCandidateViewContainer);
         //mKeyboardSwitcher.makeKeyboards(true);
         if (mCandidateViewContainer == null) {
@@ -732,7 +759,7 @@ public class LatinIME extends InputMethodService implements
             .findViewById(R.id.candidates);
             mCandidateView.setPadding(0, 0, 0, 0);
             mCandidateView.setService(this);
-            setCandidatesView(mCandidateViewContainer);
+            //setCandidatesView(mCandidateViewContainer);
         }
         return mCandidateViewContainer;
     }
@@ -765,7 +792,7 @@ public class LatinIME extends InputMethodService implements
         sKeyboardSettings.editorFieldId = attribute.fieldId;
         sKeyboardSettings.editorInputType = attribute.inputType;
 
-        //Log.i("PCKeyboard", "onStartInputView " + attribute + ", inputType= " + Integer.toHexString(attribute.inputType) + ", restarting=" + restarting);
+        Log.i("PCKeyboard", "onStartInputView " + attribute + ", inputType= " + Integer.toHexString(attribute.inputType) + ", restarting=" + restarting);
         LatinKeyboardView inputView = mKeyboardSwitcher.getInputView();
         // In landscape mode, this method gets called without the input view
         // being created.
@@ -775,7 +802,7 @@ public class LatinIME extends InputMethodService implements
 
         if (mRefreshKeyboardRequired) {
             mRefreshKeyboardRequired = false;
-            toggleLanguage(true, true);
+            toggleLanguage(true, true,false);
         }
 
         mKeyboardSwitcher.makeKeyboards(false);
@@ -807,6 +834,7 @@ public class LatinIME extends InputMethodService implements
         mPredictionOnForMode = false;
         mCompletionOn = false;
         mCompletions = null;
+        mCompletionsFullText = null;
         mModCtrl = false;
         mModAlt = false;
         mModMeta = false;
@@ -816,7 +844,7 @@ public class LatinIME extends InputMethodService implements
         mSuggestionForceOff = false;
         mKeyboardModeOverridePortrait = 0;
         mKeyboardModeOverrideLandscape = 0;
-        sKeyboardSettings.useExtension = false;
+        sKeyboardSettings.useExtension = true;
 
         switch (attribute.inputType & EditorInfo.TYPE_MASK_CLASS) {
         case EditorInfo.TYPE_CLASS_NUMBER:
@@ -846,19 +874,22 @@ public class LatinIME extends InputMethodService implements
             } else {
                 mAutoSpace = true;
             }
-            if (variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS) {
+            //*//edited by Maxim Pulya
+            if (variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+                    variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS )  {
                 mPredictionOnForMode = false;
                 mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_EMAIL,
                         attribute.imeOptions, enableVoiceButton);
             } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_URI) {
-                mPredictionOnForMode = false;
+                mPredictionOnForMode = true;
                 mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_URL,
                         attribute.imeOptions, enableVoiceButton);
             } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_SHORT_MESSAGE) {
                 mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_IM,
                         attribute.imeOptions, enableVoiceButton);
             } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_FILTER) {
-                mPredictionOnForMode = false;
+                mPredictionOnForMode = true; //*//Pulya max: I enabled prediction there because
+                //*// Youtube search bar uses this mode
             } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT) {
                 mKeyboardSwitcher.setKeyboardMode(KeyboardSwitcher.MODE_WEB,
                         attribute.imeOptions, enableVoiceButton);
@@ -870,9 +901,13 @@ public class LatinIME extends InputMethodService implements
                 }
             }
 
-            // If NO_SUGGESTIONS is set, don't do prediction.
+            //OLD: If NO_SUGGESTIONS is set, don't do prediction.
+
+            //*//Maxim Pulya: If NO_SUGGESTIONS is set, do prediction because Google Chrome
+            //*//authors set this flag to false in search bar
+            //*//Gboard also ignores this flag
             if ((attribute.inputType & EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) {
-                mPredictionOnForMode = false;
+                //mPredictionOnForMode = false;
                 mInputTypeNoAutoCorrect = true;
             }
             // If it's not multiline and the autoCorrect flag is not set, then
@@ -881,6 +916,7 @@ public class LatinIME extends InputMethodService implements
                     && (attribute.inputType & EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE) == 0) {
                 mInputTypeNoAutoCorrect = true;
             }
+            //*//Max Pulya: What?
             if ((attribute.inputType & EditorInfo.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
                 mPredictionOnForMode = false;
                 mCompletionOn = isFullscreenMode();
@@ -1090,6 +1126,7 @@ public class LatinIME extends InputMethodService implements
         TextEntryState.endSession();
     }
 
+    //*//Code below not used
     @Override
     public void onDisplayCompletions(CompletionInfo[] completions) {
         if (mCompletionOn) {
@@ -1113,6 +1150,7 @@ public class LatinIME extends InputMethodService implements
         }
     }
 
+    //*// Edited by Maxim Pulya to fix candidates view
     private void setCandidatesViewShownInternal(boolean shown,
             boolean needsInputViewShown) {
 //        Log.i(TAG, "setCandidatesViewShownInternal(" + shown + ", " + needsInputViewShown +
@@ -1131,16 +1169,17 @@ public class LatinIME extends InputMethodService implements
                         : true);
         if (visible) {
             if (mCandidateViewContainer == null) {
-                onCreateCandidatesView();
+                mCandidateViewAndKeyboardView.addView(createCandidatesView(),0);
                 setNextSuggestions();
             }
         } else {
             if (mCandidateViewContainer != null) {
+                mCandidateViewAndKeyboardView.removeView(mCandidateViewContainer);
                 removeCandidateViewContainer();
                 commitTyped(getCurrentInputConnection(), true);
             }
         }
-        super.setCandidatesViewShown(visible);
+        //super.setCandidatesViewShown(visible);
     }
 
     @Override
@@ -1482,17 +1521,29 @@ public class LatinIME extends InputMethodService implements
     private boolean isShowingOptionDialog() {
         return mOptionsDialog != null && mOptionsDialog.isShowing();
     }
-
-    private boolean isConnectbot() {
+    private String getEditorPackageName(){ //*//Refactored by Maxim Pulya
         EditorInfo ei = getCurrentInputEditorInfo();
-        String pkg = ei.packageName;
-        if (ei == null || pkg == null) return false;
+        String pkg = null;
+        if (ei!=null) pkg=ei.packageName;
+        if (pkg==null)pkg="";
+        return pkg;
+    }
+    private boolean isConnectbot() {
+        String pkg = getEditorPackageName();
         return ((pkg.equalsIgnoreCase("org.connectbot")
             || pkg.equalsIgnoreCase("org.woltage.irssiconnectbot")
             || pkg.equalsIgnoreCase("com.pslib.connectbot")
             || pkg.equalsIgnoreCase("sk.vx.connectbot")
-        ) && ei.inputType == 0); // FIXME
+        ) && getCurrentInputEditorInfo().inputType == 0); // FIXME
     }
+    //*//Added by Maxim Pulya
+    //*//In settings used to autofill by tab into "Private DNS" field
+    private boolean isSettings() {
+        String pkg = getEditorPackageName();
+        return pkg.equalsIgnoreCase("com.android.settings"
+        );
+    }
+
 
     private int getMetaState(boolean shifted) {
         int meta = 0;
@@ -1705,7 +1756,7 @@ public class LatinIME extends InputMethodService implements
         }
         InputConnection ic = getCurrentInputConnection();
         Integer ctrlseq = null;
-        if (mConnectbotTabHack) {
+        if (mTabHack) {
             ctrlseq = CTRL_SEQUENCES.get(code);
         }
         String seq = ESC_SEQUENCES.get(code);
@@ -1889,10 +1940,11 @@ public class LatinIME extends InputMethodService implements
     
     private void sendTab() {
         InputConnection ic = getCurrentInputConnection();
-        boolean tabHack = isConnectbot() && mConnectbotTabHack;
+        boolean tabHackConnectBot = isConnectbot() && mTabHack;
+        boolean tabHackSettings = isSettings() && mTabHack;
 
         // FIXME: tab and ^I don't work in connectbot, hackish workaround
-        if (tabHack) {
+        if (tabHackConnectBot) {
             if (mModAlt) {
                 // send ESC prefix
                 ic.commitText(Character.toString((char) 27), 1);
@@ -1905,6 +1957,17 @@ public class LatinIME extends InputMethodService implements
                     KeyEvent.KEYCODE_I));
             ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,
                     KeyEvent.KEYCODE_I));
+        } else if (tabHackSettings) {
+            mCountTabPresses++;
+            if (mCountTabPresses==2)mCountTabPresses=0; // wrap around
+            switch (mCountTabPresses){
+                case 0:
+                    EditingUtil.SetText(ic,"dns.comss.one");
+                    break;
+                case 1:
+                    EditingUtil.SetText(ic,"dns.nullsproxy.com");
+                    break;
+            }
         } else {
             sendModifiedKeyDownUp(KeyEvent.KEYCODE_TAB);
         }
@@ -1958,10 +2021,9 @@ public class LatinIME extends InputMethodService implements
                 handleShift();
             break;
         case Keyboard.KEYCODE_MODE_CHANGE:
-            // Symbol key is handled in onPress() when device has distinct
+            //OLD: Symbol key is handled in onPress() when device has distinct
             // multi-touch panel.
-            if (!distinctMultiTouch)
-                changeKeyboardMode();
+            changeKeyboardMode(); //*//Pulya max: Fix of changing keyboard mode if extension is enabled
             break;
         case LatinKeyboardView.KEYCODE_CTRL_LEFT:
             // Ctrl key is handled in onPress() when device has distinct
@@ -2001,10 +2063,10 @@ public class LatinIME extends InputMethodService implements
             mComposeBuffer.clear();
             break;
         case LatinKeyboardView.KEYCODE_NEXT_LANGUAGE:
-            toggleLanguage(false, true);
+            toggleLanguage(false, true,false);
             break;
         case LatinKeyboardView.KEYCODE_PREV_LANGUAGE:
-            toggleLanguage(false, false);
+            toggleLanguage(false, false,false);
             break;
         case LatinKeyboardView.KEYCODE_VOICE:
             if (mVoiceRecognitionTrigger.isInstalled()) {
@@ -2122,15 +2184,24 @@ public class LatinIME extends InputMethodService implements
         // User released a finger outside any key
         mKeyboardSwitcher.onCancelInput();
     }
-
+    //*//Edited by Pulya Max //*// Added ctrl+backspace hotkey
     private void handleBackspace() {
+        boolean ctrl_backspace_hotkey_enabled=true;
         boolean deleteChar = false;
         InputConnection ic = getCurrentInputConnection();
         if (ic == null)
             return;
 
+        if(mModCtrl&&ctrl_backspace_hotkey_enabled){
+            mPredicting = false;
+            ic.setComposingText("", 0);
+            mWord.reset();
+            mComposing=new StringBuilder();
+            mJustRevertedSeparator = " ";
+            EditingUtil.deleteWordAndSeparatorAtCursor(ic," .,?!:;(){}[]<>'\"@-=+*/#\\&~$%^|`");
+        }
+        else {
         ic.beginBatchEdit();
-
         if (mPredicting) {
             final int length = mComposing.length();
             if (length > 0) {
@@ -2145,65 +2216,86 @@ public class LatinIME extends InputMethodService implements
                 ic.deleteSurroundingText(1, 0);
             }
         } else {
-            deleteChar = true;
-        }
-        postUpdateShiftKeyState();
-        TextEntryState.backspace();
-        if (TextEntryState.getState() == TextEntryState.State.UNDO_COMMIT) {
-            revertLastWord(deleteChar);
-            ic.endBatchEdit();
-            return;
-        } else if (mEnteredText != null
-                && sameAsTextBeforeCursor(ic, mEnteredText)) {
-            ic.deleteSurroundingText(mEnteredText.length(), 0);
-        } else if (deleteChar) {
-            if (mCandidateView != null
-                    && mCandidateView.dismissAddToDictionaryHint()) {
-                // Go back to the suggestion mode if the user canceled the
-                // "Touch again to save".
-                // NOTE: In gerenal, we don't revert the word when backspacing
-                // from a manual suggestion pick. We deliberately chose a
-                // different behavior only in the case of picking the first
-                // suggestion (typed word). It's intentional to have made this
-                // inconsistent with backspacing after selecting other
-                // suggestions.
+                deleteChar = true;
+            }
+            postUpdateShiftKeyState();
+            TextEntryState.backspace();
+            if (TextEntryState.getState() == TextEntryState.State.UNDO_COMMIT) {
                 revertLastWord(deleteChar);
-            } else {
-                sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL);
-                if (mDeleteCount > DELETE_ACCELERATE_AT) {
+                ic.endBatchEdit();
+                return;
+            } else if (mEnteredText != null
+                    && sameAsTextBeforeCursor(ic, mEnteredText)) {
+                ic.deleteSurroundingText(mEnteredText.length(), 0);
+            } else if (deleteChar) {
+                if (mCandidateView != null
+                        && mCandidateView.dismissAddToDictionaryHint()) {
+                    // Go back to the suggestion mode if the user canceled the
+                    // "Touch again to save".
+                    // NOTE: In gerenal, we don't revert the word when backspacing
+                    // from a manual suggestion pick. We deliberately chose a
+                    // different behavior only in the case of picking the first
+                    // suggestion (typed word). It's intentional to have made this
+                    // inconsistent with backspacing after selecting other
+                    // suggestions.
+                    revertLastWord(deleteChar);
+                } else {
                     sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL);
+                    if (mDeleteCount > DELETE_ACCELERATE_AT) {
+                        sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL);
+                    }
                 }
             }
+            mJustRevertedSeparator = null;
+            ic.endBatchEdit();
         }
-        mJustRevertedSeparator = null;
-        ic.endBatchEdit();
     }
-
+    //*// Patched by Pulya Max(added force english when modifier keys are pressed) //*//
+    private void p_max_check_mkeys(){
+        if (!mModsPressed&&(mModCtrl||mModAlt||mModMeta)&&!mModFn){
+            mModsPressed=true;
+            toggleLanguage(false,false,true);}
+        if ((!mModCtrl&&!mModAlt&&!mModMeta)&&!mModFn){
+            mModsPressed=false;
+            toggleLanguage(true,false,true);}
+    }
+    private void p_max_set_indicators(){
+        mKeyboardSwitcher.setCtrlIndicator(mModCtrl);
+        mKeyboardSwitcher.setAltIndicator(mModAlt);
+        mKeyboardSwitcher.setMetaIndicator(mModMeta);
+    }
     private void setModCtrl(boolean val) {
+
         // Log.i("LatinIME", "setModCtrl "+ mModCtrl + "->" + val + ", chording=" + mCtrlKeyState.isChording());
-        mKeyboardSwitcher.setCtrlIndicator(val);
+        System.out.println("mModCtrl="+val);
         mModCtrl = val;
+        p_max_check_mkeys();
+        p_max_set_indicators();
     }
 
     private void setModAlt(boolean val) {
         //Log.i("LatinIME", "setModAlt "+ mModAlt + "->" + val + ", chording=" + mAltKeyState.isChording());
-        mKeyboardSwitcher.setAltIndicator(val);
+        System.out.println("mModAlt="+val);
         mModAlt = val;
+        p_max_check_mkeys();
+        p_max_set_indicators();
     }
 
     private void setModMeta(boolean val) {
         //Log.i("LatinIME", "setModMeta "+ mModMeta + "->" + val + ", chording=" + mMetaKeyState.isChording());
-        mKeyboardSwitcher.setMetaIndicator(val);
+        System.out.println("mModMeta="+val);
         mModMeta = val;
+        p_max_check_mkeys();
+        p_max_set_indicators();
     }
 
     private void setModFn(boolean val) {
+        System.out.println("mModFn="+val);
         //Log.i("LatinIME", "setModFn " + mModFn + "->" + val + ", chording=" + mFnKeyState.isChording());
         mModFn = val;
+        p_max_check_mkeys();
         mKeyboardSwitcher.setFn(val);
-        mKeyboardSwitcher.setCtrlIndicator(mModCtrl);
-        mKeyboardSwitcher.setAltIndicator(mModAlt);
-        mKeyboardSwitcher.setMetaIndicator(mModMeta);
+        p_max_set_indicators();
     }
 
     private void startMultitouchShift() {
@@ -2497,6 +2589,21 @@ public class LatinIME extends InputMethodService implements
                     typedWordValid, haveMinimalSuggestion);
         }
     }
+    private void setSuggestions(List<CharSequence> suggestions,
+                                List<CharSequence> suggestions_fullText,
+                                boolean completions, boolean typedWordValid,
+                                boolean haveMinimalSuggestion) {
+
+        if (mIsShowingHint) {
+            setCandidatesViewShown(true);
+            mIsShowingHint = false;
+        }
+
+        if (mCandidateView != null) {
+            mCandidateView.setSuggestions(suggestions, suggestions_fullText, completions,
+                    typedWordValid, haveMinimalSuggestion);
+        }
+    }
 
     private void updateSuggestions() {
         LatinKeyboardView inputView = mKeyboardSwitcher.getInputView();
@@ -2597,8 +2704,13 @@ public class LatinIME extends InputMethodService implements
         return false;
     }
 
-    public void pickSuggestionManually(int index, CharSequence suggestion) {
+
+    public void pickSuggestionManually(int index) {
         List<CharSequence> suggestions = mCandidateView.getSuggestions();
+        List<CharSequence> suggestions_FullText = mCandidateView.getSuggestions_fullText();
+        CharSequence suggestion;
+        if (suggestions_FullText!=null) suggestion = suggestions_FullText.get(index);
+        else suggestion = suggestions.get(index);
 
         final boolean correcting = TextEntryState.isCorrecting();
         InputConnection ic = getCurrentInputConnection();
@@ -2607,7 +2719,11 @@ public class LatinIME extends InputMethodService implements
         }
         if (mCompletionOn && mCompletions != null && index >= 0
                 && index < mCompletions.length) {
-            CompletionInfo ci = mCompletions[index];
+
+            CompletionInfo ci;
+            if(mCompletionsFullText!=null) ci = mCompletionsFullText[index];
+            else  ci = mCompletions[index];
+
             if (ic != null) {
                 ic.commitCompletion(ci);
             }
@@ -2625,7 +2741,7 @@ public class LatinIME extends InputMethodService implements
         // If this is a punctuation, apply it through the normal key press
         if (suggestion.length() == 1
                 && (isWordSeparator(suggestion.charAt(0)) || isSuggestedPunctuation(suggestion
-                        .charAt(0)))) {
+                .charAt(0)))) {
             final char primaryCode = suggestion.charAt(0);
             onKey(primaryCode, new int[] { primaryCode },
                     LatinKeyboardBaseView.NOT_A_TOUCH_COORDINATE,
@@ -2677,6 +2793,7 @@ public class LatinIME extends InputMethodService implements
         }
     }
 
+
     private void rememberReplacedWord(CharSequence suggestion) {
     }
 
@@ -2710,6 +2827,9 @@ public class LatinIME extends InputMethodService implements
             setNextSuggestions();
         }
         updateShiftKeyState(getCurrentInputEditorInfo());
+        if(suggestion.equals("/del")){
+            EditingUtil.SetText(ic,"");
+        }
     }
 
     /**
@@ -2785,9 +2905,99 @@ public class LatinIME extends InputMethodService implements
         }
     }
 
+    //*//Edited by Maxim Pulya
     private void setNextSuggestions() {
-        setSuggestions(mSuggestPuncList, false, false, false);
+        List<CharSequence> suggestions = null;
+        List<CharSequence> suggestions_fullText = null;
+        switch (getEditorPackageName()) {
+            case "com.android.settings":
+                suggestions = new ArrayList<CharSequence>();
+                suggestions_fullText = new ArrayList<CharSequence>();
+                if(EditingUtil.textViewIsEmpty(getCurrentInputConnection())) {
+                    suggestions_fullText.add("dns.nullsproxy.com");
+                    suggestions.add("Null`s Proxy");
+
+                    suggestions_fullText.add("dns.comss.one");
+                    suggestions.add("Comss DNS");
+
+                    suggestions_fullText.add("dot.sb");
+                    suggestions.add("dot.sb");
+
+                    suggestions_fullText.add("/del");
+                    suggestions.add("/del");
+
+                }
+                break;
+            case "ai.x.grok":
+            case "com.deepseek.chat": //*// AI
+            case "com.google.android.googlequicksearchbox"://*//Gemini AI is part of google app
+            case "com.openai.chatgpt":
+                suggestions = new ArrayList<CharSequence>();
+                suggestions_fullText = new ArrayList<CharSequence>();
+                if(EditingUtil.textViewIsEmpty(getCurrentInputConnection())) {
+                    suggestions.add("/перевод");
+                    suggestions_fullText.add("System_Role: \"Translator. You must translate text from field 'Text' to language from field 'Language_code'. In output should be only translated text for copying.\"\n" +
+                            "Language_code: \"\"\n" +
+                            "Text: \"\"\n");}
+
+                break;
+            case "com.mojang.minecraftpe":
+            case "net.kdt.pojavlaunch":
+                suggestions=new ArrayList<CharSequence>();
+                if(EditingUtil.textViewIsEmpty(getCurrentInputConnection())) {
+                    suggestions.add("/tp");
+                    suggestions.add("/gamemode");
+                    suggestions.add("/give");
+                    suggestions.add("/time set");
+                    suggestions.add("/summon");
+                    suggestions.add("/weather");
+                    suggestions.add("/kill");
+                    suggestions.add("/setworldspawn");
+                }
+                break;
+            case "com.android.browser":
+            case "com.android.chrome":
+            case "com.brave.browser":
+            case "com.duckduckgo.app.browser":
+            case "com.lineageos.jelly":
+            case "com.microsoft.emmx":
+            case "com.microsoft.emmx.dev":
+            case "com.opera.browser":
+            case "com.sec.android.app.sbrowser":
+            case "com.sec.android.app.sbrowser.beta":
+            case "org.mozilla.firefox":
+            case "org.torproject.torbrowser":
+            case "org.torproject.torbrowser_alpha":
+                suggestions=new ArrayList<CharSequence>();
+                suggestions.add("https://");
+                if(!EditingUtil.textViewIsEmpty(getCurrentInputConnection())) {
+                    suggestions.add("com");
+                    suggestions.add("org");
+                    suggestions.add("net");
+                    suggestions.add("io");
+                    suggestions.add("xyz");
+                    suggestions.add("рф");
+                    suggestions.add("ru");
+                    suggestions.add("tk");
+                    suggestions.add("cn");
+                    suggestions.add("de");
+                    suggestions.add("info");
+                    suggestions.add("top");
+                }
+                suggestions.add("https://www.");
+
+
+
+                break;
+            default:
+
+                suggestions = mSuggestPuncList;
+        }
+        if (suggestions_fullText!=null) setSuggestions(suggestions, suggestions_fullText,
+                false, false, false);
+        else setSuggestions(suggestions, false, false, false);
     }
+
 
     private void addToDictionaries(CharSequence suggestion, int frequencyDelta) {
         checkAddToDictionary(suggestion, frequencyDelta, false);
@@ -2903,15 +3113,22 @@ public class LatinIME extends InputMethodService implements
     public boolean preferCapitalization() {
         return mWord.isFirstCharCapitalized();
     }
-
-    void toggleLanguage(boolean reset, boolean next) {
-        if (reset) {
-            mLanguageSwitcher.reset();
-        } else {
-            if (next) {
-                mLanguageSwitcher.next();
+    //*// Patched by Pulya Max                                                   //*//
+    //*// reset=false,force_en=true toggles english when mod keys pressed        //*//
+    //*// reset=true,force_en=true toggles previous lang when mod keys releasing //*//
+    //*// Indicator sets when language changed
+    void toggleLanguage(boolean reset, boolean next,boolean force_en) {
+        if (force_en&&!reset)mLanguageSwitcher.p_max_force_en();
+        else if (force_en)mLanguageSwitcher.p_max_previous_lang();
+        else{
+                if (reset) {
+                mLanguageSwitcher.reset();
             } else {
-                mLanguageSwitcher.prev();
+                if (next) {
+                    mLanguageSwitcher.next();
+                } else {
+                    mLanguageSwitcher.prev();
+                }
             }
         }
         int currentKeyboardMode = mKeyboardSwitcher.getKeyboardMode();
@@ -2925,6 +3142,7 @@ public class LatinIME extends InputMethodService implements
         mDeadKeysActive = mLanguageSwitcher.allowDeadKeys();
         updateShiftKeyState(getCurrentInputEditorInfo());
         setCandidatesViewShown(isPredictionOn());
+        p_max_set_indicators();
     }
 
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences,
@@ -2949,7 +3167,7 @@ public class LatinIME extends InputMethodService implements
             mKeyboardModeOverridePortrait = 0;
         }
         if (sKeyboardSettings.hasFlag(GlobalKeyboardSettings.FLAG_PREF_RESET_KEYBOARDS)) {
-            toggleLanguage(true, true);
+            toggleLanguage(true, true,false);
         }
         int unhandledFlags = sKeyboardSettings.unhandledFlags();
         if (unhandledFlags != GlobalKeyboardSettings.FLAG_PREF_NONE) {
@@ -2970,7 +3188,7 @@ public class LatinIME extends InputMethodService implements
                         .show();
             }
         } else if (PREF_CONNECTBOT_TAB_HACK.equals(key)) {
-            mConnectbotTabHack = sharedPreferences.getBoolean(
+            mTabHack = sharedPreferences.getBoolean(
                     PREF_CONNECTBOT_TAB_HACK, res
                             .getBoolean(R.bool.default_connectbot_tab_hack));
         } else if (PREF_FULLSCREEN_OVERRIDE.equals(key)) {
@@ -3066,16 +3284,16 @@ public class LatinIME extends InputMethodService implements
             }
             setCandidatesViewShown(isPredictionOn());
         } else if (action.equals("lang_prev")) {
-            toggleLanguage(false, false);
+            toggleLanguage(false, false,false);
         } else if (action.equals("lang_next")) {
-            toggleLanguage(false, true);
+            toggleLanguage(false, true,false);
         } else if (action.equals("full_mode")) {
             if (isPortrait()) {
                 mKeyboardModeOverridePortrait = (mKeyboardModeOverridePortrait + 1) % mNumKeyboardModes;
             } else {
                 mKeyboardModeOverrideLandscape = (mKeyboardModeOverrideLandscape + 1) % mNumKeyboardModes;
             }
-            toggleLanguage(true, true);
+            toggleLanguage(true, true,false);
         } else if (action.equals("extension")) {
             sKeyboardSettings.useExtension = !sKeyboardSettings.useExtension;
             reloadKeyboards();
@@ -3087,7 +3305,7 @@ public class LatinIME extends InputMethodService implements
                 mHeightLandscape += 5;
                 if (mHeightLandscape > 70) mHeightLandscape = 70;                
             }
-            toggleLanguage(true, true);
+            toggleLanguage(true, true,false);
         } else if (action.equals("height_down")) {
             if (isPortrait()) {
                 mHeightPortrait -= 5;
@@ -3096,7 +3314,7 @@ public class LatinIME extends InputMethodService implements
                 mHeightLandscape -= 5;
                 if (mHeightLandscape < 15) mHeightLandscape = 15;                
             }
-            toggleLanguage(true, true);
+            toggleLanguage(true, true,false);
         } else {
             Log.i(TAG, "Unsupported swipe action config: " + action);
         }
@@ -3132,7 +3350,7 @@ public class LatinIME extends InputMethodService implements
             startMultitouchShift();
         } else if (distinctMultiTouch
                 && primaryCode == Keyboard.KEYCODE_MODE_CHANGE) {
-            changeKeyboardMode();
+            //*//changeKeyboardMode();    Pulya max: Fix of changing keyboard mode if extension is enabled
             mSymbolKeyState.onPress();
             mKeyboardSwitcher.setAutoModeSwitchStateMomentary();
         } else if (distinctMultiTouch
@@ -3184,8 +3402,9 @@ public class LatinIME extends InputMethodService implements
             // Snap back to the previous keyboard mode if the user chords the
             // mode change key and
             // other key, then released the mode change key.
-            if (mKeyboardSwitcher.isInChordingAutoModeSwitchState())
-                changeKeyboardMode();
+
+            //if (mKeyboardSwitcher.isInChordingAutoModeSwitchState())
+                //*//changeKeyboardMode();    Pulya max: Fix of changing keyboard mode if extension is enabled
             mSymbolKeyState.onRelease();
         } else if (distinctMultiTouch
                 && primaryCode == LatinKeyboardView.KEYCODE_CTRL_LEFT) {
