@@ -63,6 +63,25 @@ public class EditingUtil {
 
         connection.setComposingText(newText, 1);
     }
+    //*//Added by Pulya Max
+    public static void SetText(InputConnection connection, String newText) {
+        if (connection == null) {
+            return;
+        }
+
+        // Commit the composing text
+        connection.finishComposingText();
+
+        // Deletes text if the field already has text.
+        CharSequence charBeforeCursor = connection.getTextBeforeCursor(1, 0);
+        if (charBeforeCursor != null
+                && !charBeforeCursor.equals(" ")
+                && (charBeforeCursor.length() > 0)) {
+            deleteWordAtCursor(connection,"",false);
+        }
+
+        connection.setComposingText(newText, 1);
+    }
 
     private static int getCursorPosition(InputConnection connection) {
         ExtractedText extracted = connection.getExtractedText(
@@ -73,6 +92,16 @@ public class EditingUtil {
         return extracted.startOffset + extracted.selectionStart;
     }
 
+    public static boolean textViewIsEmpty(InputConnection connection) {
+        if (connection==null) return true;
+        CharSequence before = connection.getTextBeforeCursor(1, 0);
+        CharSequence after = connection.getTextAfterCursor(1, 0);
+        String text = "";
+        if(before!=null) text += before;
+        if(after!=null)  text += after;
+        return text.isEmpty();
+
+    }
     /**
      * @param connection connection to the current text field.
      * @param separators characters which may separate words
@@ -83,18 +112,29 @@ public class EditingUtil {
      */
     public static String getWordAtCursor(
             InputConnection connection, String separators, Range range) {
-        Range r = getWordRangeAtCursor(connection, separators, range);
+        Range r = getWordOrSeparatorsRangeAtCursor(connection, separators, range,false);
         return (r == null) ? null : r.word;
+    }
+    //*//Added by Pulya Max. Used for ctrl+backspace hotkey
+    /**
+     * Removes the word surrounding the cursor and separators. Parameters are identical to
+     * getWordAtCursor.
+     */
+    public static void deleteWordAndSeparatorAtCursor(
+            InputConnection connection, String separators) {
+        deleteWordAtCursor(connection,separators,true);
+        deleteWordAtCursor(connection,separators,false);
     }
 
     /**
      * Removes the word surrounding the cursor. Parameters are identical to
      * getWordAtCursor.
      */
+    //*// edited by Maxim Pulya
     public static void deleteWordAtCursor(
-        InputConnection connection, String separators) {
+        InputConnection connection, String separators,boolean deleteSeparators) {
 
-        Range range = getWordRangeAtCursor(connection, separators, null);
+        Range range = getWordOrSeparatorsRangeAtCursor(connection, separators, null,deleteSeparators);
         if (range == null) return;
 
         connection.finishComposingText();
@@ -104,6 +144,7 @@ public class EditingUtil {
         connection.setSelection(newCursor, newCursor);
         connection.deleteSurroundingText(0, range.charsBefore + range.charsAfter);
     }
+
 
     /**
      * Represents a range of text, relative to the current cursor position.
@@ -133,8 +174,8 @@ public class EditingUtil {
         }
     }
 
-    private static Range getWordRangeAtCursor(
-            InputConnection connection, String sep, Range range) {
+    private static Range getWordOrSeparatorsRangeAtCursor(
+            InputConnection connection, String sep, Range range,boolean getSeparatorsRange) {
         if (connection == null || sep == null) {
             return null;
         }
@@ -146,7 +187,8 @@ public class EditingUtil {
 
         // Find first word separator before the cursor
         int start = before.length();
-        while (start > 0 && !isWhitespace(before.charAt(start - 1), sep)) start--;
+        if(!getSeparatorsRange) while (start > 0 && !isWhitespace(before.charAt(start - 1), sep)) start--;
+        else while (start > 0 && isWhitespace(before.charAt(start - 1), sep)) start--;
 
         // Find last word separator after the cursor
         int end = -1;

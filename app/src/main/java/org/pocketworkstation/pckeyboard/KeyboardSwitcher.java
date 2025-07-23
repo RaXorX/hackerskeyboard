@@ -226,7 +226,9 @@ public class KeyboardSwitcher implements
         /** A KEYBOARDMODE_XXX value */
         public final boolean mEnableShiftLock;
         public final boolean mHasVoice;
-        public final float mKeyboardHeightPercent;
+        public float mKeyboardHeightPercent;
+        //*//Pulya Max. Size of keyboard is dynamic.
+        //*// Used by Big pin keyboard option
         public final boolean mUsingExtension;
 
         private final int mHashCode;
@@ -307,11 +309,13 @@ public class KeyboardSwitcher implements
 
         KeyboardId id = getKeyboardId(mode, imeOptions, isSymbols);
         LatinKeyboard keyboard = null;
+        //*// Added by Maxim Pulya
+        //*// I made pin keyboard bigger
+        if (mode == MODE_PHONE && mInputMethodService.isPortrait())id.mKeyboardHeightPercent*=1.4;
+
         keyboard = getKeyboard(id);
 
-        if (mode == MODE_PHONE) {
-            mInputView.setPhoneKeyboard(keyboard);
-        }
+        if (mode == MODE_PHONE)mInputView.setPhoneKeyboard(keyboard);
 
         mCurrentId = id;
         mInputView.setKeyboard(keyboard);
@@ -644,7 +648,8 @@ public class KeyboardSwitcher implements
         mInputMethodService.mHandler.post(new Runnable() {
             public void run() {
                 if (mInputView != null) {
-                    mInputMethodService.setInputView(mInputView);
+                    //*//Edited by Pulya Max to fix candidates
+                    mInputMethodService.setInputView(mInputMethodService.mCandidateViewAndKeyboardView);
                 }
                 mInputMethodService.updateInputViewShown();
             }
